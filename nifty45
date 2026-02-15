@@ -1,7 +1,10 @@
 //@version=6
-strategy("NIFTY/BN Smart-Time Model — CLEAN CORE",
+strategy("NIFTY/BN Smart-Time Model — CLEAN CORE (Buffered)",
      overlay=true,
      initial_capital=100000)
+
+// ================= INPUTS =================
+vwapBufferPct = input.float(0.05, "VWAP Buffer %", step = 0.01)
 
 // ================= TIME =================
 isFirst     = (hour == 9 and minute == 15)
@@ -53,17 +56,29 @@ if canEnter
             strategy.entry("LONG", strategy.long)
 
 // =====================================================
-// 🧠 SMART EXIT
+// 🧠 SMART EXIT (WITH BUFFER)
 // =====================================================
 
 bearCandle = close < open
 bullCandle = close > open
 
-longVWAPFail      = strategy.position_size > 0 and close < vwapVal
-longMomentumFail  = strategy.position_size > 0 and close < entryPrice and bearCandle
+// 🔹 buffered VWAP failure (LESS aggressive)
+longVWAPFail =
+     strategy.position_size > 0 and
+     close < vwapVal * (1 - vwapBufferPct / 100)
 
-shortVWAPFail     = strategy.position_size < 0 and close > vwapVal
-shortMomentumFail = strategy.position_size < 0 and close > entryPrice and bullCandle
+shortVWAPFail =
+     strategy.position_size < 0 and
+     close > vwapVal * (1 + vwapBufferPct / 100)
+
+// 🔹 momentum check
+longMomentumFail  =
+     strategy.position_size > 0 and
+     close < entryPrice and bearCandle
+
+shortMomentumFail =
+     strategy.position_size < 0 and
+     close > entryPrice and bullCandle
 
 adaptiveExit =
      (longVWAPFail and longMomentumFail) or
