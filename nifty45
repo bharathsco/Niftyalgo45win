@@ -1,0 +1,106 @@
+//@version=6
+strategy("NIFTY/BN Smart-Time Model — CLEAN CORE",
+     overlay=true,
+     initial_capital=100000)
+
+// ================= TIME =================
+isFirst     = (hour == 9 and minute == 15)
+isEntry     = (hour == 12 and minute == 15)
+isTimeExit  = (hour == 14 and minute == 15)
+
+// ================= STORAGE =================
+var float firstHigh   = na
+var int   firstDir    = na
+var float entryPrice  = na
+var bool  tradeActive = false
+
+// ===== EXIT COUNTERS =====
+var int smartExitCount = 0
+var int timeExitCount  = 0
+
+// ================= VWAP =================
+vwapVal = ta.vwap(close)
+
+// ================= DAY RESET =================
+newDay = ta.change(time("D")) != 0
+if newDay
+    firstHigh   := na
+    firstDir    := na
+    entryPrice  := na
+    tradeActive := false
+
+// ================= FIRST CANDLE =================
+if isFirst
+    firstHigh := high
+    firstDir  := close > open ? 1 : close < open ? -1 : 0
+
+// ================= ENTRY =================
+canEnter = isEntry and strategy.position_size == 0 and not na(firstHigh) and not na(firstDir)
+
+if canEnter
+    entryPrice  := close
+    tradeActive := true
+
+    if firstDir == -1
+        if high > firstHigh
+            strategy.entry("LONG", strategy.long)
+        else
+            strategy.entry("SHORT", strategy.short)
+    else
+        if high < firstHigh
+            strategy.entry("SHORT", strategy.short)
+        else
+            strategy.entry("LONG", strategy.long)
+
+// =====================================================
+// 🧠 SMART EXIT
+// =====================================================
+
+bearCandle = close < open
+bullCandle = close > open
+
+longVWAPFail      = strategy.position_size > 0 and close < vwapVal
+longMomentumFail  = strategy.position_size > 0 and close < entryPrice and bearCandle
+
+shortVWAPFail     = strategy.position_size < 0 and close > vwapVal
+shortMomentumFail = strategy.position_size < 0 and close > entryPrice and bullCandle
+
+adaptiveExit =
+     (longVWAPFail and longMomentumFail) or
+     (shortVWAPFail and shortMomentumFail)
+
+// =====================================================
+// 🚪 FINAL EXIT
+// =====================================================
+
+if tradeActive and strategy.position_size != 0
+
+    // 🥇 SMART EXIT
+    if adaptiveExit
+        smartExitCount += 1
+        tradeActive := false
+        strategy.close_all(comment="Smart Exit")
+
+    // 🥈 TIME EXIT
+    else if isTimeExit
+        timeExitCount += 1
+        tradeActive := false
+        strategy.close_all(comment="Time Exit")
+
+// =====================================================
+// 📊 DEBUG LABEL
+// =====================================================
+
+var label statsLabel = na
+
+if barstate.islastconfirmedhistory or barstate.isrealtime
+    label.delete(statsLabel)
+    statsLabel := label.new(bar_index, high,
+         text =
+            "Smart: " + str.tostring(smartExitCount) +
+            "\nTime: " + str.tostring(timeExitCount),
+         style = label.style_label_down,
+         color = color.black,
+         textcolor = color.white)
+
+plot(close)
